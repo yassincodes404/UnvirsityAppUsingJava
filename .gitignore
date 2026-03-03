@@ -1,0 +1,22 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Build
+target/
+*.class
+*.jar
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Docker volumes
+mysql-data/
