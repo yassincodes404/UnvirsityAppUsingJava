@@ -23,54 +23,79 @@ public class ApiClient {
         this.gson = new Gson();
     }
 
-    /** GET /api/health */
-    public String checkHealth() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/health"))
-                .GET()
-                .build();
+    // ---- Health ----
+    public String checkHealth() throws Exception { return get("/api/health"); }
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        return response.body();
+    // ---- Students ----
+    public List<Map<String, Object>> getStudents() throws Exception { return getList("/api/students"); }
+    public Map<String, Object> createStudent(Map<String, Object> data) throws Exception { return post("/api/students", data); }
+    public Map<String, Object> updateStudent(long id, Map<String, Object> data) throws Exception { return put("/api/students/" + id, data); }
+    public boolean deleteStudent(long id) throws Exception { return delete("/api/students/" + id); }
+
+    // ---- Courses ----
+    public List<Map<String, Object>> getCourses() throws Exception { return getList("/api/courses"); }
+    public Map<String, Object> createCourse(Map<String, Object> data) throws Exception { return post("/api/courses", data); }
+    public Map<String, Object> updateCourse(long id, Map<String, Object> data) throws Exception { return put("/api/courses/" + id, data); }
+    public boolean deleteCourse(long id) throws Exception { return delete("/api/courses/" + id); }
+
+    // ---- Doctors ----
+    public List<Map<String, Object>> getDoctors() throws Exception { return getList("/api/doctors"); }
+    public Map<String, Object> createDoctor(Map<String, Object> data) throws Exception { return post("/api/doctors", data); }
+    public Map<String, Object> updateDoctor(long id, Map<String, Object> data) throws Exception { return put("/api/doctors/" + id, data); }
+    public boolean deleteDoctor(long id) throws Exception { return delete("/api/doctors/" + id); }
+
+    // ---- Enrollments ----
+    public List<Map<String, Object>> getEnrollments() throws Exception { return getList("/api/enrollments"); }
+    public Map<String, Object> enroll(long studentId, long courseId) throws Exception {
+        return post("/api/enrollments", Map.of("studentId", studentId, "courseId", courseId));
+    }
+    public void setGrade(long enrollmentId, String grade) throws Exception {
+        patch("/api/enrollments/" + enrollmentId + "/grade", Map.of("grade", grade));
+    }
+    public boolean dropEnrollment(long id) throws Exception { return delete("/api/enrollments/" + id); }
+
+    // ---- HTTP Helpers ----
+
+    private String get(String path) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(baseUrl + path)).GET().build();
+        return httpClient.send(req, HttpResponse.BodyHandlers.ofString()).body();
     }
 
-    /** GET /api/items — returns list of items as List<Map> */
-    public List<Map<String, Object>> getAllItems() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/items"))
-                .GET()
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        Type listType = new TypeToken<List<Map<String, Object>>>() {}.getType();
-        return gson.fromJson(response.body(), listType);
+    private List<Map<String, Object>> getList(String path) throws Exception {
+        Type t = new TypeToken<List<Map<String, Object>>>() {}.getType();
+        return gson.fromJson(get(path), t);
     }
 
-    /** POST /api/items — creates a new item */
-    public Map<String, Object> createItem(String name, String description) throws Exception {
-        String json = gson.toJson(Map.of("name", name, "description", description));
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/items"))
+    private Map<String, Object> post(String path, Object data) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        Type mapType = new TypeToken<Map<String, Object>>() {}.getType();
-        return gson.fromJson(response.body(), mapType);
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(data))).build();
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        Type t = new TypeToken<Map<String, Object>>() {}.getType();
+        return gson.fromJson(resp.body(), t);
     }
 
-    /** DELETE /api/items/{id} */
-    public boolean deleteItem(long id) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/items/" + id))
-                .DELETE()
-                .build();
+    private Map<String, Object> put(String path, Object data) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(gson.toJson(data))).build();
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        Type t = new TypeToken<Map<String, Object>>() {}.getType();
+        return gson.fromJson(resp.body(), t);
+    }
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        return response.statusCode() == 204;
+    private void patch(String path, Object data) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
+                .header("Content-Type", "application/json")
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(gson.toJson(data))).build();
+        httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private boolean delete(String path) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(baseUrl + path)).DELETE().build();
+        return httpClient.send(req, HttpResponse.BodyHandlers.ofString()).statusCode() == 204;
     }
 }
