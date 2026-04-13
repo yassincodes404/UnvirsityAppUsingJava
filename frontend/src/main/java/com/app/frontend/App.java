@@ -23,6 +23,10 @@ public class App extends Application {
     private StackPane contentArea;
     private final List<Button> navButtons = new ArrayList<>();
 
+    // Roles and Identity
+    private String currentUserRole = null; // "ADMIN", "DOCTOR", "STUDENT"
+    private long currentUserId = -1;
+
     // Data
     private final ObservableList<StudentRow> studentList = FXCollections.observableArrayList();
     private final ObservableList<DoctorRow> doctorList = FXCollections.observableArrayList();
@@ -35,7 +39,126 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
+        showLoginView(stage);
+    }
 
+    // ============================= LOGIN VIEW =============================
+
+    private void showLoginView(Stage stage) {
+        VBox root = new VBox(20);
+        root.setAlignment(Pos.CENTER);
+        root.setStyle("-fx-background-color: #0f172a;");
+
+        VBox card = new VBox(16);
+        card.getStyleClass().add("login-container");
+        card.setMaxWidth(400);
+        card.setAlignment(Pos.CENTER);
+
+        Label title = new Label("Welcome back");
+        title.getStyleClass().add("login-title");
+        Label sub = new Label("Sign in to your account");
+        sub.getStyleClass().add("login-subtitle");
+
+        TextField emailField = new TextField();
+        emailField.setPromptText("Email Address");
+        emailField.getStyleClass().add("text-field");
+
+        PasswordField passField = new PasswordField();
+        passField.setPromptText("Password");
+        passField.getStyleClass().add("password-field");
+
+        Button loginBtn = new Button("Sign in");
+        loginBtn.getStyleClass().add("btn-primary");
+        loginBtn.setMaxWidth(Double.MAX_VALUE);
+
+        Label loginStatus = new Label("Test Accounts (user / pass):\nadmin / admin123\ndoctor / doctor123\nstudent / student123");
+        loginStatus.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
+
+        card.getChildren().addAll(title, sub, emailField, passField, loginBtn, loginStatus);
+        root.getChildren().add(card);
+
+        Scene scene = new Scene(root, 1060, 660);
+        scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
+        stage.setScene(scene);
+        stage.setTitle("SIS – Login");
+        stage.show();
+
+        loginBtn.setOnAction(e -> {
+            loginStatus.setText("Connecting to database...");
+            loginStatus.setStyle("-fx-text-fill: #94a3b8;");
+            String em = emailField.getText().trim();
+            String pw = passField.getText();
+
+            asyncRun(() -> {
+                // Hardcoded UI testing bypass (works offline)
+                if (em.equalsIgnoreCase("admin") && pw.equals("admin123")) {
+                    Platform.runLater(() -> {
+                        currentUserRole = "ADMIN";
+                        currentUserId = -1;
+                        showMainDashboard(stage);
+                    });
+                    return;
+                }
+                if (em.equalsIgnoreCase("doctor") && pw.equals("doctor123")) {
+                    Platform.runLater(() -> {
+                        currentUserRole = "DOCTOR";
+                        currentUserId = 1; // dummy fallback
+                        showMainDashboard(stage);
+                    });
+                    return;
+                }
+                if (em.equalsIgnoreCase("student") && pw.equals("student123")) {
+                    Platform.runLater(() -> {
+                        currentUserRole = "STUDENT";
+                        currentUserId = 1; // dummy fallback
+                        showMainDashboard(stage);
+                    });
+                    return;
+                }
+
+                // Normal Database Matching Flow
+                try {
+                    api.checkHealth(); // Wait for backend connection
+                    
+                    var doctors = api.getDoctors();
+                    var docMatch = doctors.stream().filter(d -> str(d, "email").equalsIgnoreCase(em)).findFirst();
+                    if (docMatch.isPresent() && pw.equals("password123")) {
+                        Platform.runLater(() -> {
+                            currentUserRole = "DOCTOR";
+                            currentUserId = toLong(docMatch.get(), "id");
+                            showMainDashboard(stage);
+                        });
+                        return;
+                    }
+
+                    var students = api.getStudents();
+                    var stuMatch = students.stream().filter(s -> str(s, "email").equalsIgnoreCase(em)).findFirst();
+                    if (stuMatch.isPresent() && pw.equals("password123")) {
+                        Platform.runLater(() -> {
+                            currentUserRole = "STUDENT";
+                            currentUserId = toLong(stuMatch.get(), "id");
+                            showMainDashboard(stage);
+                        });
+                        return;
+                    }
+
+                    Platform.runLater(() -> {
+                        loginStatus.setStyle("-fx-text-fill: #ef4444;");
+                        loginStatus.setText("Invalid username or password.");
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        loginStatus.setStyle("-fx-text-fill: #ef4444;");
+                        loginStatus.setText("Connection error: backend is offline.");
+                    });
+                }
+            });
+        });
+    }
+
+    // ============================= MAIN APP =============================
+
+    private void showMainDashboard(Stage stage) {
         // Header
         Label title = new Label("🎓  Student Information System");
         title.getStyleClass().add("header-title");
@@ -48,12 +171,12 @@ public class App extends Application {
         header.setAlignment(Pos.CENTER_LEFT);
 
         // Sidebar
-        VBox sidebar = createSidebar();
+        VBox sidebar = createSidebar(stage);
 
         // Content
         contentArea = new StackPane();
-        contentArea.setPadding(new Insets(20));
-        contentArea.setStyle("-fx-background-color: #f0f2f5;");
+        contentArea.setPadding(new Insets(24));
+        contentArea.setStyle("-fx-background-color: #0f172a;");
         HBox.setHgrow(contentArea, Priority.ALWAYS);
 
         HBox body = new HBox(sidebar, contentArea);
@@ -63,13 +186,11 @@ public class App extends Application {
         Scene scene = new Scene(root, 1060, 660);
         scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
 
-        stage.setTitle("SIS – Student Information System");
         stage.setScene(scene);
-        stage.show();
-
-        showView("dashboard");
+        
+        showView("dash");
         asyncRun(() -> {
-            try { api.checkHealth(); setStatus("✅ Connected", false); }
+            try { api.checkHealth(); setStatus("✅ Connected as " + currentUserRole, false); }
             catch (Exception e) { setStatus("❌ Backend offline", true); }
         });
         refreshAll();
@@ -77,15 +198,35 @@ public class App extends Application {
 
     // ============================= SIDEBAR =============================
 
-    private VBox createSidebar() {
-        Button b1 = navBtn("📊  Dashboard",    "dash");
-        Button b2 = navBtn("👤  Students",      "stud");
-        Button b3 = navBtn("🩺  Doctors",       "doct");
-        Button b4 = navBtn("📚  Courses",       "cour");
-        Button b5 = navBtn("📝  Enrollments",   "enro");
-        b1.getStyleClass().add("nav-button-active");
-        VBox sb = new VBox(4, b1, b2, b3, b4, b5);
+    private VBox createSidebar(Stage stage) {
+        navButtons.clear();
+        VBox sb = new VBox(8);
         sb.getStyleClass().add("sidebar");
+
+        Button b1 = navBtn("📊  Dashboard", "dash");
+        b1.getStyleClass().add("nav-button-active");
+        sb.getChildren().add(b1);
+
+        if ("ADMIN".equals(currentUserRole)) {
+            sb.getChildren().addAll(
+                navBtn("👤  Students", "stud"),
+                navBtn("🩺  Doctors", "doct"),
+                navBtn("📚  Courses", "cour")
+            );
+        }
+
+        if ("ADMIN".equals(currentUserRole) || "DOCTOR".equals(currentUserRole) || "STUDENT".equals(currentUserRole)) {
+            sb.getChildren().add(navBtn("📝  Enrollments", "enro"));
+        }
+
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
+
+        Button logoutBtn = new Button("🚪 Logout");
+        logoutBtn.getStyleClass().add("nav-button");
+        logoutBtn.setOnAction(e -> showLoginView(stage));
+
+        sb.getChildren().addAll(spacer, logoutBtn);
         return sb;
     }
 
@@ -100,8 +241,10 @@ public class App extends Application {
 
     private void showView(String id) {
         navButtons.forEach(b -> b.getStyleClass().remove("nav-button-active"));
-        navButtons.stream().filter(b -> b.getText().toLowerCase().contains(id)).findFirst()
+        navButtons.stream().filter(b -> b.getText().toLowerCase().contains(id) || 
+            (id.equals("dash") && b.getText().contains("Dashboard"))).findFirst()
                 .ifPresent(b -> b.getStyleClass().add("nav-button-active"));
+        
         Node view = switch (id) {
             case "stud" -> buildStudentsView();
             case "doct" -> buildDoctorsView();
@@ -115,7 +258,7 @@ public class App extends Application {
     // ============================= DASHBOARD =============================
 
     private Node buildDashboard() {
-        Label h = new Label("Dashboard");
+        Label h = new Label("Dashboard Overview");
         h.getStyleClass().add("section-title");
 
         statStudents = new Label(String.valueOf(studentList.size()));
@@ -123,28 +266,39 @@ public class App extends Application {
         statCourses = new Label(String.valueOf(courseList.size()));
         statEnrollments = new Label(String.valueOf(enrollList.size()));
 
-        HBox stats = new HBox(16,
-                statCard("👤", statStudents, "Students"),
-                statCard("🩺", statDoctors, "Doctors"),
-                statCard("📚", statCourses, "Courses"),
-                statCard("📝", statEnrollments, "Enrollments"));
+        HBox stats = new HBox(20);
+        
+        if("ADMIN".equals(currentUserRole)) {
+            stats.getChildren().addAll(
+                    statCard("👤", statStudents, "Total Students"),
+                    statCard("🩺", statDoctors, "Total Doctors"),
+                    statCard("📚", statCourses, "Total Courses"),
+                    statCard("📝", statEnrollments, "Total Enrollments")
+            );
+        } else if("DOCTOR".equals(currentUserRole)) {
+            stats.getChildren().addAll(
+                statCard("📝", statEnrollments, "My Enrollments")
+            );
+        } else if("STUDENT".equals(currentUserRole)) {
+            stats.getChildren().addAll(
+                statCard("📚", statEnrollments, "My Courses")
+            );
+        }
 
-        Label hint = new Label("Navigate using the sidebar to manage the university data.");
-        hint.setStyle("-fx-text-fill: #78909c; -fx-font-size: 13px; -fx-padding: 10 0;");
+        Label hint = new Label("Role: " + currentUserRole + ". Navigate using the sidebar to manage data.");
+        hint.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 14px; -fx-padding: 20 0;");
 
-        VBox v = new VBox(14, h, stats, hint);
-        v.setPadding(new Insets(4));
+        VBox v = new VBox(20, h, stats, hint);
         return v;
     }
 
     private VBox statCard(String icon, Label val, String label) {
-        Label ic = new Label(icon); ic.setStyle("-fx-font-size: 24px;");
+        Label ic = new Label(icon); ic.setStyle("-fx-font-size: 32px; -fx-padding: 0 0 10 0;");
         val.getStyleClass().add("stat-value");
         Label lb = new Label(label); lb.getStyleClass().add("stat-label");
-        VBox c = new VBox(4, ic, val, lb);
+        VBox c = new VBox(6, ic, val, lb);
         c.getStyleClass().add("stat-card");
         c.setAlignment(Pos.CENTER_LEFT);
-        c.setPrefWidth(180);
         return c;
     }
 
@@ -179,20 +333,19 @@ public class App extends Application {
         TextField emF = tf("Email", 160), mjF = tf("Major", 120), yrF = tf("Year", 50);
 
         Button addBtn = btn("➕ Add", "btn-success");
-        Button editBtn = btn("✏️ Edit Selected", "btn-primary");
+        Button editBtn = btn("✏️ Edit", "btn-primary");
         Button delBtn = btn("🗑 Delete", "btn-danger");
-        Button refBtn = btn("🔄", "btn-secondary");
+        Button refBtn = btn("🔄 Refresh", "btn-secondary");
 
-        HBox row1 = new HBox(8, lf("Student ID", sidF), lf("First Name", fnF), lf("Last Name", lnF), lf("Email", emF));
-        HBox row2 = new HBox(8, lf("Major", mjF), lf("Year", yrF));
-        HBox acts = new HBox(8, addBtn, editBtn, delBtn, refBtn);
+        HBox row1 = new HBox(12, lf("Student ID", sidF), lf("First Name", fnF), lf("Last Name", lnF), lf("Email", emF));
+        HBox row2 = new HBox(12, lf("Major", mjF), lf("Year", yrF));
+        HBox acts = new HBox(12, addBtn, editBtn, delBtn, refBtn);
         acts.setAlignment(Pos.CENTER_LEFT);
-        acts.setPadding(new Insets(4, 0, 6, 0));
+        acts.setPadding(new Insets(10, 0, 0, 0));
 
-        VBox form = new VBox(6, row1, row2, acts);
+        VBox form = new VBox(12, row1, row2, acts);
         form.getStyleClass().add("card");
 
-        // Fill form on table click
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
             if (n != null) {
                 sidF.setText(n.getStudentId()); fnF.setText(n.getFirstName()); lnF.setText(n.getLastName());
@@ -221,7 +374,7 @@ public class App extends Application {
 
         refBtn.setOnAction(e -> refreshAll());
 
-        VBox v = new VBox(12, h, form, table); v.setPadding(new Insets(4)); return v;
+        VBox v = new VBox(16, h, form, table); return v;
     }
 
     private Map<String, Object> studentMap(TextField sid, TextField fn, TextField ln, TextField em, TextField mj, TextField yr) {
@@ -257,16 +410,16 @@ public class App extends Application {
         TextField depF = tf("Department", 120), specF = tf("Specialization", 130), phF = tf("Phone", 100);
 
         Button addBtn = btn("➕ Add", "btn-success");
-        Button editBtn = btn("✏️ Edit Selected", "btn-primary");
+        Button editBtn = btn("✏️ Edit", "btn-primary");
         Button delBtn = btn("🗑 Delete", "btn-danger");
-        Button refBtn = btn("🔄", "btn-secondary");
+        Button refBtn = btn("🔄 Refresh", "btn-secondary");
 
-        HBox row1 = new HBox(8, lf("First Name", fnF), lf("Last Name", lnF), lf("Email", emF));
-        HBox row2 = new HBox(8, lf("Department", depF), lf("Specialization", specF), lf("Phone", phF));
-        HBox acts = new HBox(8, addBtn, editBtn, delBtn, refBtn);
-        acts.setAlignment(Pos.CENTER_LEFT); acts.setPadding(new Insets(4, 0, 6, 0));
+        HBox row1 = new HBox(12, lf("First Name", fnF), lf("Last Name", lnF), lf("Email", emF));
+        HBox row2 = new HBox(12, lf("Department", depF), lf("Specialization", specF), lf("Phone", phF));
+        HBox acts = new HBox(12, addBtn, editBtn, delBtn, refBtn);
+        acts.setAlignment(Pos.CENTER_LEFT); acts.setPadding(new Insets(10, 0, 0, 0));
 
-        VBox form = new VBox(6, row1, row2, acts); form.getStyleClass().add("card");
+        VBox form = new VBox(12, row1, row2, acts); form.getStyleClass().add("card");
 
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
             if (n != null) {
@@ -296,7 +449,7 @@ public class App extends Application {
 
         refBtn.setOnAction(e -> refreshAll());
 
-        VBox v = new VBox(12, h, form, table); v.setPadding(new Insets(4)); return v;
+        VBox v = new VBox(16, h, form, table); return v;
     }
 
     private Map<String, Object> doctorMap(TextField fn, TextField ln, TextField em, TextField dep, TextField spec, TextField ph) {
@@ -326,18 +479,18 @@ public class App extends Application {
         TextField docIdF = tf("Doctor DB ID", 80);
 
         Label docHint = new Label("→ Use Doctor ID from Doctors tab");
-        docHint.setStyle("-fx-text-fill: #90a4ae; -fx-font-size: 11px;");
+        docHint.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
 
         Button addBtn = btn("➕ Add", "btn-success");
-        Button editBtn = btn("✏️ Edit Selected", "btn-primary");
+        Button editBtn = btn("✏️ Edit", "btn-primary");
         Button delBtn = btn("🗑 Delete", "btn-danger");
-        Button refBtn = btn("🔄", "btn-secondary");
+        Button refBtn = btn("🔄 Refresh", "btn-secondary");
 
-        HBox row1 = new HBox(8, lf("Code", codeF), lf("Course Name", nameF), lf("Credits", credF), lf("Doctor ID", docIdF));
-        HBox acts = new HBox(8, addBtn, editBtn, delBtn, refBtn, docHint);
-        acts.setAlignment(Pos.CENTER_LEFT); acts.setPadding(new Insets(4, 0, 6, 0));
+        HBox row1 = new HBox(12, lf("Code", codeF), lf("Course Name", nameF), lf("Credits", credF), lf("Doctor ID", docIdF));
+        HBox acts = new HBox(12, addBtn, editBtn, delBtn, refBtn, docHint);
+        acts.setAlignment(Pos.CENTER_LEFT); acts.setPadding(new Insets(10, 0, 0, 0));
 
-        VBox form = new VBox(6, row1, acts); form.getStyleClass().add("card");
+        VBox form = new VBox(12, row1, acts); form.getStyleClass().add("card");
 
         table.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
             if (n != null) {
@@ -367,7 +520,7 @@ public class App extends Application {
 
         refBtn.setOnAction(e -> refreshAll());
 
-        VBox v = new VBox(12, h, form, table); v.setPadding(new Insets(4)); return v;
+        VBox v = new VBox(16, h, form, table); return v;
     }
 
     private Map<String, Object> courseMap(TextField code, TextField name, TextField cred, TextField docId) {
@@ -382,7 +535,11 @@ public class App extends Application {
 
     @SuppressWarnings("unchecked")
     private Node buildEnrollmentsView() {
-        Label h = new Label("Manage Enrollments"); h.getStyleClass().add("section-title");
+        Label h = new Label(
+            "STUDENT".equals(currentUserRole) ? "My Courses" : 
+            ("DOCTOR".equals(currentUserRole) ? "My Students" : "Manage Enrollments")
+        ); 
+        h.getStyleClass().add("section-title");
 
         TableView<EnrollRow> table = new TableView<>(enrollList);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
@@ -393,22 +550,31 @@ public class App extends Application {
                 col("Date", "enrolledDate", 100));
         VBox.setVgrow(table, Priority.ALWAYS);
 
-        TextField stuF = tf("Student DB ID", 90), couF = tf("Course DB ID", 90), graF = tf("Grade", 60);
+        TextField stuF = tf("Student DB ID", 110), couF = tf("Course DB ID", 110), graF = tf("Grade", 80);
 
         Button enrollBtn = btn("📝 Enroll", "btn-success");
         Button gradeBtn = btn("📊 Set Grade", "btn-purple");
         Button dropBtn = btn("🗑 Drop", "btn-danger");
-        Button refBtn = btn("🔄", "btn-secondary");
+        Button refBtn = btn("🔄 Refresh", "btn-secondary");
 
-        Label hint = new Label("💡 Select a row to set grade or drop. Use DB IDs from Students/Courses tabs.");
-        hint.setStyle("-fx-text-fill: #90a4ae; -fx-font-size: 11px;");
+        Label hint = new Label("💡 Select a row to interact.");
+        hint.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13px;");
 
-        HBox row1 = new HBox(8, lf("Student ID", stuF), lf("Course ID", couF), enrollBtn);
+        HBox row1 = new HBox(12, lf("Student ID", stuF), lf("Course ID", couF), enrollBtn);
         row1.setAlignment(Pos.BOTTOM_LEFT);
-        HBox row2 = new HBox(8, lf("Grade", graF), gradeBtn, dropBtn, refBtn);
+        HBox row2 = new HBox(12, lf("Grade", graF), gradeBtn, dropBtn, refBtn);
         row2.setAlignment(Pos.BOTTOM_LEFT);
 
-        VBox form = new VBox(6, row1, row2, hint); form.getStyleClass().add("card");
+        VBox form = new VBox(12);
+        form.getStyleClass().add("card");
+
+        if ("ADMIN".equals(currentUserRole)) {
+            form.getChildren().addAll(row1, row2, hint);
+        } else if ("DOCTOR".equals(currentUserRole)) {
+            form.getChildren().addAll(new HBox(12, lf("Student Grade", graF), gradeBtn, refBtn), hint);
+        } else if ("STUDENT".equals(currentUserRole)) {
+            form.getChildren().addAll(new HBox(12, refBtn));
+        }
 
         enrollBtn.setOnAction(e -> {
             try {
@@ -433,7 +599,7 @@ public class App extends Application {
 
         refBtn.setOnAction(e -> refreshAll());
 
-        VBox v = new VBox(12, h, form, table); v.setPadding(new Insets(4)); return v;
+        VBox v = new VBox(16, h, form, table); return v;
     }
 
     // ============================= DATA REFRESH =============================
@@ -471,15 +637,27 @@ public class App extends Application {
                         Map<String, Object> stu = (Map<String, Object>) e.get("student");
                         @SuppressWarnings("unchecked")
                         Map<String, Object> crs = (Map<String, Object>) e.get("course");
+                        
                         String sn = stu != null ? str(stu, "firstName") + " " + str(stu, "lastName") + " (" + str(stu, "studentId") + ")" : "?";
                         String cn = crs != null ? str(crs, "courseCode") + " — " + str(crs, "courseName") : "?";
                         String gr = e.get("grade") != null ? e.get("grade").toString() : "—";
-                        return new EnrollRow(toLong(e, "id"), sn, cn, gr, str(e, "enrolledDate"));
+                        
+                        long stuId = stu != null ? toLong(stu, "id") : -1;
+                        long docId = -1;
+                        if(crs != null) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> doc = (Map<String, Object>) crs.get("doctor");
+                            if(doc != null) docId = toLong(doc, "id");
+                        }
+
+                        return new EnrollRow(toLong(e, "id"), sn, cn, gr, str(e, "enrolledDate"), docId, stuId);
+                    }).filter(row -> {
+                        if("DOCTOR".equals(currentUserRole)) return row.getDoctorId() == currentUserId;
+                        if("STUDENT".equals(currentUserRole)) return row.getStudentId() == currentUserId;
+                        return true;
                     }).toList());
 
                     updateStats();
-                    setStatus("✅ Synced — " + studentList.size() + " students, " + doctorList.size() +
-                            " doctors, " + courseList.size() + " courses, " + enrollList.size() + " enrollments", false);
                 });
             } catch (Exception e) { setStatus("❌ Sync failed: " + e.getMessage(), true); }
         });
@@ -487,8 +665,8 @@ public class App extends Application {
 
     // ============================= HELPERS =============================
 
-    private TextField tf(String prompt, double w) { TextField t = new TextField(); t.setPromptText(prompt); t.setPrefWidth(w); return t; }
-    private VBox lf(String label, TextField tf) { Label l = new Label(label); l.getStyleClass().add("field-label"); return new VBox(1, l, tf); }
+    private TextField tf(String prompt, double w) { TextField t = new TextField(); t.setPromptText(prompt); t.setPrefWidth(w); t.getStyleClass().add("text-field"); return t; }
+    private VBox lf(String label, Node tf) { Label l = new Label(label); l.getStyleClass().add("field-label"); return new VBox(4, l, tf); }
     private Button btn(String text, String css) { Button b = new Button(text); b.getStyleClass().add(css); return b; }
 
     @SuppressWarnings("unchecked")
@@ -508,7 +686,12 @@ public class App extends Application {
     }
 
     private void setStatus(String t, boolean err) {
-        Platform.runLater(() -> { statusLabel.setText(t); statusLabel.setStyle("-fx-text-fill: " + (err ? "#ef5350" : "#a5d6a7") + ";"); });
+        Platform.runLater(() -> { 
+            if(statusLabel != null) {
+                statusLabel.setText(t); 
+                statusLabel.setStyle("-fx-text-fill: " + (err ? "#ef4444" : "#cbd5e1") + ";"); 
+            }
+        });
     }
     private void ok(String msg) { setStatus("✅ " + msg, false); }
     private void err(Exception ex) { setStatus("❌ " + ex.getMessage(), true); }
@@ -568,14 +751,17 @@ public class App extends Application {
 
     public static class EnrollRow {
         private final long dbId;
+        private final long doctorId; 
+        private final long studentId;
         private final SimpleStringProperty studentName, courseInfo, grade, enrolledDate;
-        public EnrollRow(long id, String stu, String crs, String gr, String dt) {
-            dbId=id; studentName=new SimpleStringProperty(stu); courseInfo=new SimpleStringProperty(crs);
+        public EnrollRow(long id, String stu, String crs, String gr, String dt, long docId, long stuId) {
+            dbId=id; doctorId=docId; studentId=stuId;
+            studentName=new SimpleStringProperty(stu); courseInfo=new SimpleStringProperty(crs);
             grade=new SimpleStringProperty(gr); enrolledDate=new SimpleStringProperty(dt);
         }
-        public long getDbId(){return dbId;} public String getStudentName(){return studentName.get();}
-        public String getCourseInfo(){return courseInfo.get();} public String getGrade(){return grade.get();}
-        public String getEnrolledDate(){return enrolledDate.get();}
+        public long getDbId(){return dbId;} public long getDoctorId(){return doctorId;} public long getStudentId(){return studentId;}
+        public String getStudentName(){return studentName.get();} public String getCourseInfo(){return courseInfo.get();} 
+        public String getGrade(){return grade.get();} public String getEnrolledDate(){return enrolledDate.get();}
     }
 
     public static void main(String[] args) { launch(args); }

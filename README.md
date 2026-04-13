@@ -55,9 +55,17 @@ Invoke-RestMethod http://localhost:8081/api/health
 ### 3. Run the Frontend
 
 ```bash
-cd frontend
-mvn javafx:run
+cd FrontEnd
+mvn clean compile exec:java -Dexec.mainClass="com.app.frontend.Main"
 ```
+
+### 4. Test Credentials
+
+Use the following hardcoded accounts in the desktop app to log in and test the different role-based views automatically:
+
+- **Admin Account:** Username: `admin` | Password: `admin123` (Full access to system)
+- **Doctor Account:** Username: `doctor` | Password: `doctor123` (Access to view/grade enrolled students)
+- **Student Account:** Username: `student` | Password: `student123` (View personal course enrollments)
 
 ---
 
@@ -77,8 +85,8 @@ java --version    # Should show 21.x
 mvn --version     # Should show 3.9+
 
 # Run the app
-cd frontend
-mvn javafx:run
+cd FrontEnd
+mvn clean compile exec:java -Dexec.mainClass="com.app.frontend.Main"
 ```
 
 ### Option B: WSL (Linux via WSLg)
@@ -95,8 +103,8 @@ sudo apt-get install -y libgtk-3-0 libgl1 libx11-6 libxxf86vm1
 echo $DISPLAY     # Should show :0
 
 # Run the app
-cd /mnt/c/Users/yasee/Projects/JavaFXDev/frontend
-mvn javafx:run
+cd /mnt/e/Projects/UnvirsityAppUsingJava/FrontEnd
+mvn clean compile exec:java -Dexec.mainClass="com.app.frontend.Main"
 ```
 
 ---
